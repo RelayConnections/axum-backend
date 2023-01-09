@@ -19,27 +19,27 @@ use controllers::{auth_controller, fs_controller};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Get Mongo serv addr
-    let mongo_addr = env::var("MONGO_SERVER_URL").expect("No MongoDB server URI specified");
+//     // Get Mongo serv addr
+//     let mongo_addr = env::var("MONGO_SERVER_URL").expect("No MongoDB server URI specified");
 
-    // Parse a connection string into an options struct.
-    let mut client_options = ClientOptions::parse(mongo_addr).await?;
+//     // Parse a connection string into an options struct.
+//     let mut client_options = ClientOptions::parse(mongo_addr).await?;
 
-    // Set the configuration
-    client_options.app_name = Some("Cluster0".to_string());
-    client_options.connect_timeout = Some(Duration::from_secs(30));
-    client_options.compressors = Some(vec![
-        Compressor::Snappy,
-        Compressor::Zlib {
-            level: Default::default(),
-        },
-        Compressor::Zstd {
-            level: Default::default(),
-        },
-    ]);
+//     // Set the configuration
+//     client_options.app_name = Some("Cluster0".to_string());
+//     client_options.connect_timeout = Some(Duration::from_secs(30));
+//     client_options.compressors = Some(vec![
+//         Compressor::Snappy,
+//         Compressor::Zlib {
+//             level: Default::default(),
+//         },
+//         Compressor::Zstd {
+//             level: Default::default(),
+//         },
+//     ]);
     
-    // Get a handle to the deployment.
-    let client = Client::with_options(client_options)?;
+//     // Get a handle to the deployment.
+//     let client = Client::with_options(client_options)?;
     
     let config: Option<RustlsConfig> = match RustlsConfig::from_pem_file(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -66,13 +66,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse::<u16>()?;
     
         // Create the API router (requires client state)
-    let app_api = axum::Router::new()
-        .route("/auth/login", post(auth_controller::handle_login))
-        .route("/auth/create", post(auth_controller::handle_new_user))
-        .route("/post", post(auth_controller::post_message))
-        .route("/update", post(auth_controller::get_messages))
-        .route("/test", post(auth_controller::test_api))
-        .with_state(client);
+    let react_csr = axum::Router::new()
+        .route("/auth", get(fs_controller::handle_index))
+        .route("/home", get(fs_controller::handle_index));
+//         .with_state(client);
 
     // Create the main router (DO NOT include a state)
     let app = axum::Router::new()
