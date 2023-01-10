@@ -25,3 +25,4 @@ tower-http = { version = "0.3.5", features = ["full"] }
 rust-crypto = "0.2.36"
 futures = "0.3.25"
 html-escape = "0.2.13"
+dotenv = "0.15.0"

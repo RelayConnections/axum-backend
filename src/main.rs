@@ -1,113 +1,90 @@
-// Hippity hoppity your code is now my property
-
-use std::{env, time::Duration, path::PathBuf};
-
-use axum::{
-    http::StatusCode,
-    response::IntoResponse,
-    routing::post,
-};
-
-use mongodb::{options::{ClientOptions, Compressor}, Client};
-
+use axum::routing::get;
 use tower_http::cors::{Any, CorsLayer};
 
-use axum_server::tls_rustls::RustlsConfig;
+use dotenv;
 
-mod controllers;
-use controllers::{auth_controller, fs_controller};
+mod routes;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//     // Get Mongo serv addr
-//     let mongo_addr = env::var("MONGO_SERVER_URL").expect("No MongoDB server URI specified");
+    
+    dotenv::dotenv().ok();
 
-//     // Parse a connection string into an options struct.
-//     let mut client_options = ClientOptions::parse(mongo_addr).await?;
-
-//     // Set the configuration
-//     client_options.app_name = Some("Cluster0".to_string());
-//     client_options.connect_timeout = Some(Duration::from_secs(30));
-//     client_options.compressors = Some(vec![
-//         Compressor::Snappy,
-//         Compressor::Zlib {
-//             level: Default::default(),
-//         },
-//         Compressor::Zstd {
-//             level: Default::default(),
-//         },
-//     ]);
-    
-//     // Get a handle to the deployment.
-//     let client = Client::with_options(client_options)?;
-    
-    let config: Option<RustlsConfig> = match RustlsConfig::from_pem_file(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("certs")
-            .join("cert.pem"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("certs")
-            .join("key.pem"),
-    ).await {
-        Ok(config) => Option::from(config),
-        Err(err) => {
-            eprintln!("{err}");
-            println!("TLS certificates (cert.pem, key.pem) not provided in the \"certs\" directory or were incompatible.");
-            Option::None
-        },
-    };
-    
     // Cross-Origin Resource Sharing
     let cors = CorsLayer::new().allow_origin(Any);
     
-    // Get the Axum port no
-    let port = env::var("AXUM_PORT")
-        .expect("No Axum port specified")
-        .parse::<u16>()?;
+    // Get the Axum port
+    let port: u16 = match dotenv::var("PORT") {
+        Ok(port) => match str::parse::<u16>(port.as_str()) {
+            Ok(port) => port,
+            Err(err) => {
+                eprintln!("Could not parse port number: {}", err);
+                println!("Defaulting to port 8000");
+                8000
+            }
+        },
+        Err(_) => {
+            println!("Defaulting to port 8000");
+            8000
+        }
+    };
     
-        // Create the API router (requires client state)
-    let react_csr = axum::Router::new()
-        .route("/auth", get(fs_controller::handle_index))
-        .route("/home", get(fs_controller::handle_index));
-//         .with_state(client);
+    // Implement the File Handler
+    let file_router = axum::Router::new()
+        .route("/", get(routes::serve_index))
+        .route("/*path", get(routes::serve_file));
 
+    // Implement the Authentication Handler
+    let auth_router = axum::Router::new()
+        .route("/", get(routes::serve_index))
+        .route("/login", get(routes::serve_index))
+        .route("/register", get(routes::serve_index));
+
+    // Implement the User Handler
+    let user_router = axum::Router::new()
+        .route("/", get(routes::serve_index))
+        .route("/:id", get(routes::serve_index))
+        .route("/:id/follow", get(routes::serve_index))
+        .route("/:id/unfollow", get(routes::serve_index));
+
+    // Integrate the Posts Handler
+    let posts_router = axum::Router::new()
+        .route("/", get(routes::serve_index))
+        .route("/:id", get(routes::serve_index))
+        .route("/:id/like", get(routes::serve_index))
+        .route("/:id/timeline", get(routes::serve_index));
+
+    // Integrate the Upload Handler
+    let upload_router = axum::Router::new()
+        .route("/", get(routes::serve_index));
+
+    // Integrate React CSR with the File Handler
+    let react_csr_fs_router = axum::Router::new()
+        .route("/home", get(routes::serve_index))
+        .route("/profile/:id", get(routes::serve_index))
+        .route("/chat", get(routes::serve_index))
+        .nest_service("/auth", auth_router)
+        .nest_service("/user", user_router)
+        .nest_service("/posts", posts_router)
+        .nest_service("/upload", upload_router)
+        .nest_service("/", file_router);
+        
     // Create the main router (DO NOT include a state)
     let app = axum::Router::new()
-        .nest_service("/", fs_controller::get_static_router())
-        .nest_service("/api", app_api)
+        .nest_service("/", react_csr_fs_router)
         .layer(cors)
-        .fallback(page_not_found);
+        .fallback(routes::page_not_found);
 
-    // Bind the Socket Address to Axum and start
-    if config.is_none() {
-        // Create a Socket Address
-        let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
-    
-        println!("Server starting on http://{}", addr);
-        
-        // Spawn server with Axum
-        axum::Server::bind(&addr)
-            .serve(app.into_make_service())
-            .await
-            .expect("Failed to start server");
-    } else {
-        // TODO(?): Add HTTP->HTTPS redirect port
+    // Create a Socket Address
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
 
-        // Create a Socket Address
-        let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
+    println!("Server starting on http://{}", addr);
     
-        println!("Server starting on https://{}", addr);
-        
-        // Spawn Rustls server with Axum_Server
-        axum_server::bind_rustls(addr, config.unwrap())
-            .serve(app.into_make_service())
-            .await
-            .expect("Failed to start server");
-    }
+    // Spawn server with Axum
+    axum::Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await
+        .expect("Failed to start server");
 
     Ok(())
-}
-
-async fn page_not_found() -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "404 Page Not Found")
 }
